@@ -58,13 +58,18 @@ class OtaHotUpdate : BaseReactPackage() {
         }
       }
     }
-    fun bundleJS(context: Context): String {
-      Thread.setDefaultUncaughtExceptionHandler(CrashHandler(context))
+    fun bundleJS(context: Context, isHandleCrash: Boolean = true): String {
+      if (isHandleCrash) {
+        Thread.setDefaultUncaughtExceptionHandler(CrashHandler(context))
+      }
       val sharedPrefs = SharedPrefs(context)
       val pathBundle = sharedPrefs.getString(PATH)
       val version = sharedPrefs.getString(VERSION)
       val currentVersionName = sharedPrefs.getString(CURRENT_VERSION_CODE)
       if (pathBundle == "" || (currentVersionName != context.getVersionCode())) {
+        if (pathBundle != "") {
+          sharedPrefs.putString(PATH, "")
+        }
         if (version != "") {
           // reset version number because bundle is wrong version, need download from new version
           sharedPrefs.putString(VERSION, "")

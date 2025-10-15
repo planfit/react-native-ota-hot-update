@@ -1,5 +1,7 @@
 #import "OtaHotUpdate.h"
 #import <SSZipArchive/SSZipArchive.h>
+#include <signal.h>
+
 static NSUncaughtExceptionHandler *previousHandler = NULL;
 static BOOL isBeginning = NO;
 @implementation OtaHotUpdate
@@ -11,6 +13,12 @@ RCT_EXPORT_MODULE()
     if (self) {
         previousHandler = NSGetUncaughtExceptionHandler();
         NSSetUncaughtExceptionHandler(&OTAExceptionHandler);
+        signal(SIGABRT, OTASignalHandler);
+        signal(SIGILL, OTASignalHandler);
+        signal(SIGSEGV, OTASignalHandler);
+        signal(SIGFPE, OTASignalHandler);
+        signal(SIGBUS, OTASignalHandler);
+        signal(SIGPIPE, OTASignalHandler);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             isBeginning = NO;
         });
@@ -18,6 +26,25 @@ RCT_EXPORT_MODULE()
     return self;
 }
 
+void OTASignalHandler(int sig) {
+    if (isBeginning) {
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        NSString *oldPath = [defaults stringForKey:@"OLD_PATH"];
+        if (oldPath) {
+            BOOL isDeleted = [OtaHotUpdate removeBundleIfNeeded:@"PATH"];
+            if (isDeleted) {
+                [defaults setObject:oldPath forKey:@"PATH"];
+            }
+            [defaults removeObjectForKey:@"OLD_PATH"];
+        } else {
+            [defaults removeObjectForKey:@"PATH"];
+        }
+        [defaults synchronize];
+    }
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
 void OTAExceptionHandler(NSException *exception) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (isBeginning) {
@@ -135,6 +162,7 @@ void OTAExceptionHandler(NSException *exception) {
     } else {
          // reset version number because bundle is wrong version, need download from new version
         [defaults removeObjectForKey:@"VERSION"];
+        [defaults removeObjectForKey:@"PATH"];
         [defaults synchronize];
         return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
     }
@@ -259,10 +287,10 @@ RCT_EXPORT_METHOD(setupBundlePath:(NSString *)path extension:(NSString *)extensi
             isBeginning = YES;
             resolve(@(YES));
         } else {
-            resolve(@(NO));
+            reject(@"E_UNZIP_FAIL", @"Unzipping failed, zip file invalid", nil);
         }
     } else {
-        resolve(@(NO));
+        reject(@"E_INVALID_PATH", @"Invalid or missing file path", nil);
     }
 }
 RCT_EXPORT_METHOD(deleteBundle:(double)i
@@ -367,7 +395,7 @@ RCT_EXPORT_METHOD(getUpdateMetadata:(double)a
 RCT_EXPORT_METHOD(setExactBundlePath:(NSString *)path
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
-    if (path) {
+  if ([OtaHotUpdate isFilePathValid:path]) {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         [defaults setObject:path forKey:@"PATH"];
         [defaults setObject:[[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"] forKey:@"VERSION_NAME"];

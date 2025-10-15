@@ -30,7 +30,49 @@ This guide demonstrates how to manage the JavaScript bundle yourself. In this ex
 ```
 > **Note:** For Expo projects, verify the path of `--entry-file node_modules/expo/AppEntry.js` in your `package.json`.
 
+
+
+#### For Hermes compiler bundle to bytecode .hbc:
+
+Use this will make start up at runtime more faster than bundlejs, need enable engine Hermes
+```json
+"scripts": {
+"export-bytecode-android": "mkdir -p dist/android && npx expo export:embed --platform android --minify=true --entry-file index.tsx --bundle-output dist/android/index.android.bundle --dev false  --assets-dest dist/android && ./node_modules/react-native/sdks/hermesc/linux64-bin/hermesc -emit-binary -out dist/android/index.android.hbc.bundle dist/android/index.android.bundle -output-source-map -w && rm -f dist/android/index.android.bundle dist/android/index.android.hbc.bundle.map && cd dist && find android -type f | zip hermes.android.hbc.zip -@ && cd .. && rm -rf dist/android",
+"export-bytecode-ios": "mkdir -p dist/ios && npx expo export:embed --platform ios --minify=true --entry-file index.tsx --bundle-output dist/ios/main.jsbundle --dev false --assets-dest dist/ios && ./node_modules/react-native/sdks/hermesc/linux64-bin/hermesc -emit-binary -out dist/ios/main.ios.hbc.jsbundle dist/ios/main.jsbundle -output-source-map -w && rm -f dist/ios/main.jsbundle dist/ios/main.ios.hbc.jsbundle.map && cd dist && find ios -type f | zip hermes.ios.hbc.zip -@ && cd .. && rm -rf dist/ios"
+}
+```
+> **Note:** This Hermes compiler for expo bare project, for CLI change expo export:embed to react-native bundle. For Hermes runner, need check version of os and change the folder `node_modules/react-native/sdks/hermesc/linux64-bin/hermesc`, change linux64-bin to os/win to make it suitable for your OS
+
+
+#### For window script:
+
+```json
+"scripts": {
+"export-android": "mkdir android\\output && react-native bundle --platform android --dev false --entry-file index.js --bundle-output android\\output\\index.android.bundle --assets-dest android\\output --sourcemap-output android\\sourcemap.js && cd android && powershell -Command \"Compress-Archive -Path output -DestinationPath index.android.bundle.zip\" && powershell -Command \"Compress-Archive -Path ..\\android\\sourcemap.js -DestinationPath sourcemap.zip\" && cd .. && rmdir /s /q android\\output && del android\\sourcemap.js",
+"export-ios": "mkdir ios\\output && react-native bundle --platform ios --dev false --entry-file index.js --bundle-output ios\\output\\main.jsbundle --assets-dest ios\\output --sourcemap-output ios\\sourcemap.js && cd ios && powershell -Command \"Compress-Archive -Path output -DestinationPath main.jsbundle.zip\" && powershell -Command \"Compress-Archive -Path ..\\ios\\sourcemap.js -DestinationPath sourcemap.zip\" && cd .. && rmdir /s /q ios\\output && del ios\\sourcemap.js"
+}
+```
+
 These scripts export the bundle and source map files, then compress them into a zip file (one for Android and one for iOS). You can customize these scripts to automate uploading to your server. Source map files can be ignored or used for debugging in release mode.
+
+```json
+Make sure zip file structure will be like this, should inside a parent folder:
+
+bundle.zip
+└── folder_name
+    ├── index.android.bundle
+    └── assets
+        ├── xxx.png
+        ├── xxxx.jpg
+        ├── fonts
+        │   ├── xxx.ttf
+        │   └── xxx.ttf
+        └── images
+            ├── xxx
+            └── xxx
+
+```
+
 
 ### 2. Create an `update.json` File
 
