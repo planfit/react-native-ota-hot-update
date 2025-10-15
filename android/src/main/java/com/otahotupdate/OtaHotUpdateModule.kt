@@ -36,33 +36,98 @@ class OtaHotUpdateModule internal constructor(context: ReactApplicationContext) 
   }
 
   private fun processBundleFile(path: String?, extension: String?): Boolean {
+    // 🔍 진단: processBundleFile 시작
+    android.util.Log.i("OtaHotUpdateModule", "[PROCESS_START] Path: $path, Extension: $extension")
+
     if (path != null) {
       val file = File(path)
+      android.util.Log.i("OtaHotUpdateModule", "[PROCESS_CHECK] File exists: ${file.exists()}, Is file: ${file.isFile}, Size: ${file.length()}")
+
       if (file.exists() && file.isFile) {
+        // ✅ FIX: Delete old bundle BEFORE creating new one
+        val sharedPrefs = SharedPrefs(reactApplicationContext)
+        val oldPath = sharedPrefs.getString(PATH)
+
+        android.util.Log.i("OtaHotUpdateModule", "[DELETE_OLD_BEFORE] Current PATH: $oldPath")
+
+        if (!oldPath.isNullOrEmpty()) {
+          // Save to PREVIOUS_PATH before deletion
+          sharedPrefs.putString(PREVIOUS_PATH, oldPath)
+          android.util.Log.i("OtaHotUpdateModule", "[DELETE_OLD_BEFORE] Saved to PREVIOUS_PATH")
+
+          // Delete old bundle safely
+          val deleteSuccess = utils.deleteOldBundleIfneeded(PREVIOUS_PATH)
+          android.util.Log.i("OtaHotUpdateModule", "[DELETE_OLD_BEFORE] Deletion result: $deleteSuccess")
+        } else {
+          android.util.Log.i("OtaHotUpdateModule", "[DELETE_OLD_BEFORE] No previous bundle to delete")
+        }
+
+        // 🔍 진단: 압축 해제 호출
+        android.util.Log.i("OtaHotUpdateModule", "[CALLING_EXTRACT] Calling extractZipFile...")
         val fileUnzip = utils.extractZipFile(file, extension ?: ".bundle")
+        android.util.Log.i("OtaHotUpdateModule", "[EXTRACT_RETURNED] Result: $fileUnzip")
+
         if (fileUnzip != null) {
-          file.delete()
-          utils.deleteOldBundleIfneeded(null)
-          val sharedPrefs = SharedPrefs(reactApplicationContext)
-          val oldPath = sharedPrefs.getString(PATH)
-          if (!oldPath.isNullOrEmpty()) {
-            sharedPrefs.putString(PREVIOUS_PATH, oldPath)
+          // 🔍 진단: 압축 해제된 파일 검증
+          val unzippedFile = File(fileUnzip)
+          android.util.Log.i("OtaHotUpdateModule", "[UNZIPPED_VERIFICATION] File exists: ${unzippedFile.exists()}, Readable: ${unzippedFile.canRead()}, Size: ${unzippedFile.length()}")
+
+          if (!unzippedFile.exists() || !unzippedFile.canRead()) {
+            file.delete()
+            val error = "Extracted file not accessible: $fileUnzip (exists: ${unzippedFile.exists()}, readable: ${unzippedFile.canRead()})"
+            android.util.Log.e("OtaHotUpdateModule", "[VERIFICATION_FAILED] $error")
+            throw Exception(error)
           }
+
+          // 🔍 진단: ZIP 파일 삭제
+          android.util.Log.i("OtaHotUpdateModule", "[DELETE_ZIP] Deleting original zip file: ${file.absolutePath}")
+          file.delete()
+
+          // 🔍 진단: 새 PATH 설정
+          android.util.Log.i("OtaHotUpdateModule", "[SET_PATH] Setting new PATH: $fileUnzip")
           sharedPrefs.putString(PATH, fileUnzip)
-          sharedPrefs.putString(
-            CURRENT_VERSION_CODE,
-            reactApplicationContext.getVersionCode()
-          )
+
+          // 🔍 진단: VERSION_CODE 설정
+          val versionCode = reactApplicationContext.getVersionCode()
+          android.util.Log.i("OtaHotUpdateModule", "[SET_VERSION_CODE] Setting CURRENT_VERSION_CODE: $versionCode")
+          sharedPrefs.putString(CURRENT_VERSION_CODE, versionCode)
+
+          // 🔍 진단: SharedPrefs 저장 후 검증
+          val verifyPath = sharedPrefs.getString(PATH)
+          val verifyVersionCode = sharedPrefs.getString(CURRENT_VERSION_CODE)
+          android.util.Log.i("OtaHotUpdateModule", "[VERIFY_SHAREDPREFS] PATH: $verifyPath, VERSION_CODE: $verifyVersionCode")
+
+          if (verifyPath != fileUnzip) {
+            val error = "PATH verification failed! Expected: $fileUnzip, Got: $verifyPath"
+            android.util.Log.e("OtaHotUpdateModule", "[VERIFICATION_FAILED] $error")
+            throw Exception(error)
+          }
+
+          // 🔍 진단: 최종 파일 존재 확인
+          val finalCheck = File(verifyPath!!)
+          if (!finalCheck.exists() || !finalCheck.canRead()) {
+            val error = "Final verification failed! File not accessible at: $verifyPath"
+            android.util.Log.e("OtaHotUpdateModule", "[FINAL_CHECK_FAILED] $error")
+            throw Exception(error)
+          }
+
+          android.util.Log.i("OtaHotUpdateModule", "[PROCESS_SUCCESS] All checks passed!")
           return true
         } else {
           file.delete()
-          throw Exception("File unzip failed or path is invalid: $file")
+          val error = "File unzip failed or path is invalid: $file"
+          android.util.Log.e("OtaHotUpdateModule", "[PROCESS_FAILED] $error")
+          throw Exception(error)
         }
       } else {
-        throw Exception("File not exist: $file")
+        val error = "File not exist: $file (exists: ${file.exists()}, isFile: ${file.isFile})"
+        android.util.Log.e("OtaHotUpdateModule", "[PROCESS_FAILED] $error")
+        throw Exception(error)
       }
     } else {
-      throw Exception("Invalid path: $path")
+      val error = "Invalid path: $path"
+      android.util.Log.e("OtaHotUpdateModule", "[PROCESS_FAILED] $error")
+      throw Exception(error)
     }
   }
   @ReactMethod
